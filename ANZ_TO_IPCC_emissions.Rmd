@@ -1,0 +1,270 @@
+---
+title: "ANZtoIPCC.Classification"
+author: "GUANGWU CHEN"
+date: "31/10/2023"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(readxl)
+library(psych)
+library(lubridate)
+library(plotrix)
+library(rmarkdown)
+library(ggplot2)
+library(stringr)
+library(dplyr)
+
+```
+
+
+#input the raw data in Rdata
+```{r}
+load("Z:/Scientific Assessment/GHG_Emissions/Data/NGER/nger.clean_facility_raw.Rdata")
+```
+
+# insert the concordance
+
+```{r}
+# intake concordance industrial processes
+file_path<- "C:/Users/cheng/Desktop/Concordances/category concordances/IPCC concordance/IPCC_NGER_Activity_Breakdowns/IPCC_Activity_Industrial Process.csv"
+
+IPCC_Activity_Industrial_Process <- read.csv(file_path) %>% rename("Activity.Type"="ï..Activity.Type") 
+
+
+# intake concordance Fugitive emissions
+
+file_path<- "C:/Users/cheng/Desktop/Concordances/category concordances/IPCC concordance/IPCC_NGER_Activity_Breakdowns/IPCC_Activity_Fugitive_Emissions.csv"
+
+IPCC_Activity_Fugitive_Emissions <- read.csv(file_path) %>% rename("Activity.Type"="ï..Activity.Type") 
+
+
+# intake concordance Non-transport, and only look for the sectoralmatch, need to join both division and activity,and delected without ANZ ones
+
+file_path<- "C:/Users/cheng/Desktop/Concordances/category concordances/IPCC concordance/IPCC_NGER_Activity_Breakdowns/IPCC_Activity_Non_Transport2.csv"
+
+IPCC_Activity_Non_Transport <- read.csv(file_path) %>% rename("ANZSIC..Division"="ï..ANZSIC..Division") 
+
+
+# Intake concordance Waste, and only look for the sectoral match, need to join both division and activity,and delected without ANZ ones
+file_path<- "C:/Users/cheng/Desktop/Concordances/category concordances/IPCC concordance/IPCC_NGER_Activity_Breakdowns/IPCC_Activity_Waste.csv"
+
+IPCC_Activity_Waste <- read.csv(file_path) %>% rename("ANZSIC..Division"="ï..ANZSIC..Division") 
+
+
+# Intake concordance Transport, and only look for the sectoral match, need to join both division and activity,and delected without ANZ ones
+file_path<- "C:/Users/cheng/Desktop/Concordances/category concordances/IPCC concordance/IPCC_NGER_Activity_Breakdowns/IPCC_Activity_Transport.csv"
+
+IPCC_Activity_Transport <- read.csv(file_path) %>% rename("ANZSIC..Division"="ï..ANZSIC..Division") 
+
+
+#in Non-engergy use concordance, it is not matching up with IPCC and park it for now
+
+
+#in IPCC category for category titles
+file_path<- "C:/Users/cheng/Desktop/Concordances/category concordances/IPCC concordance/IPCC_NGER_Activity_Breakdowns/IPCC_Category.csv"
+
+IPCC_Category<- read.csv(file_path)
+
+
+
+
+
+```
+
+
+# Join the concordances
+
+```{r}
+
+#test the category
+
+
+nger.clean_facility_category.test<-nger.clean_facility_raw  %>% distinct(Category.v2,Activity.Description,Source.Type,Activity.Type,ANZSIC.Group,ANZSIC.Subdivision,ANZSIC..Division,Sub.Category,Scope,Is.Energy.Context) %>% # arrange in a right order
+select(ANZSIC..Division,ANZSIC.Subdivision,ANZSIC.Group,Category.v2,Sub.Category,Activity.Type,Source.Type,Scope,Activity.Description,Is.Energy.Context) %>% # filer the energy production
+filter(Is.Energy.Context=="Consumption") %>% # limited to Scope 1 as Scope 2 are not included in IPCC and "Energy"category has no emissions data
+filter(Scope=="Scope 1")
+
+
+#left join the concordance and names and make sure there will not be more obs.
+
+IPCC_category.test2 <- nger.clean_facility_category.test %>%
+  left_join(IPCC_Activity_Industrial_Process, by = c("Category.v2","Activity.Type")) %>%
+  left_join(IPCC_Activity_Fugitive_Emissions, by = c("Category.v2","Activity.Type")) %>%
+  left_join(IPCC_Activity_Non_Transport, by = c("Category.v2","ANZSIC..Division", "Activity.Type")) %>%
+  left_join(IPCC_Activity_Waste, by = c("Category.v2","ANZSIC..Division", "Activity.Type")) %>%
+  left_join(IPCC_Activity_Transport, by = c("Category.v2","ANZSIC..Division", "Activity.Type")) %>%
+  unite("IPCC_code_L3", starts_with("IPCC_code_L3"), sep = "_", remove = FALSE, na.rm = TRUE)
+  
+#left join the IPCC category and names and make sure there will not be more obs.  
+
+
+  IPCC_category.test2 <- IPCC_category.test2 %>%
+  mutate(IPCC_code_L2 = substr(IPCC_code_L3, 1, 3)) %>%
+  left_join(IPCC_Category, by = c("IPCC_code_L3" = "ipcc_code")) %>%
+  left_join(IPCC_Category, by = c("IPCC_code_L2" = "ipcc_code")) %>%
+  rename("IPCC_title_L2"="ipcc_name.x"  , "IPCC_title_L3"="ipcc_name.y","IPCC_code_L1"="ipcc_source.x","IPCC_title_L1"="ipcc_source_name.x" ) %>%
+  select(
+    ANZSIC..Division,
+    ANZSIC.Subdivision,
+    ANZSIC.Group,
+    Category.v2,
+    Sub.Category,
+    Activity.Type,
+    Source.Type,
+    Scope,
+    Activity.Description,
+    Is.Energy.Context,
+    IPCC_code_L2,
+    IPCC_code_L3,
+    IPCC_code_L1,
+    IPCC_title_L1,
+    IPCC_title_L2,
+    IPCC_title_L3)
+          
+save(nger.clean_facility_category.test,file="Z:/Scientific Assessment/GHG_Emissions/Data/NGER/nger.clean_facility_category.test.Rdata") 
+
+```
+
+
+
+# join the SG listing data
+
+```{r}
+
+# intake concordance of SG
+file_path<- "C:/Users/cheng/Desktop/Concordances/CSV_concordance/NGER_SG_concordance.csv"
+
+nger_activity_SG_listing <- read.csv(file_path) 
+
+
+nger.clean_facility_IPCC <- nger.clean_facility_raw %>%
+  left_join(nger_activity_SG_listing, by = "Facility.Name.Unq2") # this numbers should align with the raw data 116741
+
+
+# test it and they should have the same numbers of obs.
+nger.clean_facility_IPCC.test <-nger.clean_facility_IPCC %>% distinct(Facility.Name.Unq2,SafeGuard)
+
+nger.clean_facility_raw.test <-nger.clean_facility_raw %>% distinct(Facility.Name.Unq2)
+
+
+```
+
+
+# jOin the clean concordance
+```{r}
+nger.clean_facility_IPCC.test2 <-nger.clean_facility_IPCC %>% 
+  left_join(IPCC_category.test2, by=c("ANZSIC..Division","ANZSIC.Subdivision","ANZSIC.Group","Category.v2","Sub.Category","Activity.Type","Source.Type","Scope","Activity.Description","Is.Energy.Context")) # see how many obs. comparing to original
+
+# test to see how to align the obs. with original data
+
+
+```
+
+#test the category
+
+```{r}
+nger.clean_facility_IPCC.test <-nger.clean_facility_IPCC %>% distinct(Activity.Type,ANZSIC..Division..Code.v1,ipcc_code,ipcc_category,ipcc_sub_category,ipcc_source_type,anzsic_division_code,anzsic_group_code,ANZSIC.Subdivision.Code.v1,Scope, ANZSIC..Division,ANZSIC.Subdivision,ANZSIC.Group,SafeGuard) %>% filter(Scope=="Scope 1")
+```
+
+
+#test the results to see if the larger emissions were because of the join data, results turn out to be the right number
+
+```{r}
+nger.clean_summary_facility_all_PBI <- nger.clean_facility_raw %>%
+  mutate(Activity.Description = str_to_title(Activity.Description))%>%  # change the first character of titles to capital
+mutate(Report.Period = case_when (Report.Period == "2006-2007"~"2021-2022",TRUE ~ as.character(Report.Period)
+   )) %>%   # change the first character of titles to capital
+  mutate(year=sub("\\d+-", "", Report.Period)) %>%  # change the year from e.g. 2001-2002 to 2002
+  mutate(year = as.numeric(year)) %>%
+  select(year,Facility.Name.Unq2,Facility..CER.Id3,ANZSIC.Subdivision.Code.v1,ANZSIC.Subdivision.v1,ANZSIC.Group.Code.v2,ANZSIC.Group.v1,ANZSIC..Division.v1,ANZSIC..Division..Code.v1,State...Activity.,Facility.Latitude.Unq,Facility.Longitude.Unq,Category.v2,Scope,Activity.Description,Emission.Amount...tCO2.e., Methane,CarbonDioxide,NitrousOxide,Electricity..Production..Usage,Source.Type,Activity.Type,Fuel.Quantity..unit.,Activity..Energy..GJ.) %>%
+  #filter(Scope=="Scope 1") %>%
+  mutate(ANZSIC.Group.Code.v2 = ifelse(is.na(ANZSIC.Group.Code.v2), 0, ANZSIC.Group.Code.v2)) %>%
+  #filter(!grepl("electricity", Category.Unq, ignore.case = TRUE)) %>% #delete all facilities that contain "electricity", scope 2 is irrelevant.
+  #filter(!grepl("electricity", Activity.Description, ignore.case = TRUE)) %>% #delete all facilities that contain "electricity", scope 2 is irrelevant.
+  #filter(State...Activity.=="QLD")%>% #NO need to filter out state activity as some may allocate to QLD if headquater is here
+  #group_by(Facility.Name.Unq2,ANZSIC..Division,Facility..CER.Id3,year,Facility.Latitude.Unq,Facility.Longitude.Unq) %>%
+ # filter(ANZSIC.Group.Code.v2 != "261" & ANZSIC.Group.Code.v2 != "262" & ANZSIC.Group.Code.v2 != "263")%>%
+  #group_by(Facility.Name.Unq2,ANZSIC.Group.v1,ANZSIC.Group.Code.v2,year,Facility.Latitude.Unq,Facility.Longitude.Unq,Category.v2)%>% #filter the electricity sector
+  #summarize(total_emissions = sum(Emission.Amount...tCO2.e.),total_methane=sum(Methane),total_CO2=sum(CarbonDioxide),total_N2O=sum(NitrousOxide)) %>%
+  mutate(Date = as.Date(paste0('30/06/',year), "%d/%m/%Y")) %>%   #PBI only regonise the date
+   rename(Facility.Name=Facility.Name.Unq2,
+          Facility.Id=Facility..CER.Id3,
+          ANZSIC.Division=ANZSIC..Division.v1,
+          ANZSIC.Division.Code=ANZSIC..Division..Code.v1,
+          ANZSIC.Subdivision=ANZSIC.Subdivision.v1,
+          ANZSIC.Subdivision.Code=ANZSIC.Subdivision.Code.v1,
+          ANZSIC.Group=ANZSIC.Group.v1,
+          ANZSIC.Group.Code=ANZSIC.Group.Code.v2,
+          State.Activity=State...Activity.,
+          Latitude=Facility.Latitude.Unq,
+          Longitude=Facility.Longitude.Unq,
+          Category=Category.v2,
+          Emission.Amount_tCO2e=Emission.Amount...tCO2.e.,
+          Electricity.Production.Usage=Electricity..Production..Usage,
+          Fuel.Quantity=Fuel.Quantity..unit.,
+          Activity.Energy.GJ=Activity..Energy..GJ.) %>%  #tidy up the variable names
+mutate(Fuel.Quantity = ifelse(is.na(Fuel.Quantity), 0 , Fuel.Quantity),
+       Activity.Energy.GJ= ifelse(is.na(Activity.Energy.GJ), 0 ,  Activity.Energy.GJ)) #revise to replace NA in Fuel.Quantity with 0
+
+nger.clean_summary_facility_test<-nger.clean_summary_facility_all_PBI %>% filter(Electricity.Production.Usage=="For use onsite")
+      
+  
+save(nger.clean_summary_facility_all_PBI,file="Z:/Scientific Assessment/GHG_Emissions/Data/NGER/nger.clean_IPCC_output.Rdata")
+
+```
+
+
+
+# generate the output
+```{r}
+nger.clean_summary_facility_all_PBI <- nger.clean_facility_IPCC.test2 %>%
+  mutate(Activity.Description = str_to_title(Activity.Description))%>%  # change the first character of titles to capital
+mutate(Report.Period = case_when (Report.Period == "2006-2007"~"2021-2022",TRUE ~ as.character(Report.Period)
+   )) %>%   # change the first character of titles to capital
+  mutate(year=sub("\\d+-", "", Report.Period)) %>%  # change the year from e.g. 2001-2002 to 2002
+  mutate(year = as.numeric(year)) %>%
+  select(year,Facility.Name.Unq2,Facility..CER.Id3,ANZSIC.Subdivision.Code.v1,ANZSIC.Subdivision.v1,ANZSIC.Group.Code.v2,ANZSIC.Group.v1,ANZSIC..Division.v1,ANZSIC..Division..Code.v1,State...Activity.,Facility.Latitude.Unq,Facility.Longitude.Unq,Category.v2,Scope,Activity.Description,Emission.Amount...tCO2.e., Methane,CarbonDioxide,NitrousOxide,Electricity..Production..Usage,Source.Type,Activity.Type,Fuel.Quantity..unit.,Activity..Energy..GJ.,SafeGuard,IPCC_code_L2,
+    IPCC_code_L3,
+    IPCC_code_L1,
+    IPCC_title_L1,
+    IPCC_title_L2,
+    IPCC_title_L3) %>%
+  #filter(Scope=="Scope 1") %>%
+  mutate(ANZSIC.Group.Code.v2 = ifelse(is.na(ANZSIC.Group.Code.v2), 0, ANZSIC.Group.Code.v2)) %>%
+  #filter(!grepl("electricity", Category.Unq, ignore.case = TRUE)) %>% #delete all facilities that contain "electricity", scope 2 is irrelevant.
+  #filter(!grepl("electricity", Activity.Description, ignore.case = TRUE)) %>% #delete all facilities that contain "electricity", scope 2 is irrelevant.
+  #filter(State...Activity.=="QLD")%>% #NO need to filter out state activity as some may allocate to QLD if headquater is here
+  #group_by(Facility.Name.Unq2,ANZSIC..Division,Facility..CER.Id3,year,Facility.Latitude.Unq,Facility.Longitude.Unq) %>%
+ # filter(ANZSIC.Group.Code.v2 != "261" & ANZSIC.Group.Code.v2 != "262" & ANZSIC.Group.Code.v2 != "263")%>%
+  #group_by(Facility.Name.Unq2,ANZSIC.Group.v1,ANZSIC.Group.Code.v2,year,Facility.Latitude.Unq,Facility.Longitude.Unq,Category.v2)%>% #filter the electricity sector
+  #summarize(total_emissions = sum(Emission.Amount...tCO2.e.),total_methane=sum(Methane),total_CO2=sum(CarbonDioxide),total_N2O=sum(NitrousOxide)) %>%
+  mutate(Date = as.Date(paste0('30/06/',year), "%d/%m/%Y")) %>%   #PBI only regonise the date
+   rename(Facility.Name=Facility.Name.Unq2,
+          Facility.Id=Facility..CER.Id3,
+          ANZSIC.Division=ANZSIC..Division.v1,
+          ANZSIC.Division.Code=ANZSIC..Division..Code.v1,
+          ANZSIC.Subdivision=ANZSIC.Subdivision.v1,
+          ANZSIC.Subdivision.Code=ANZSIC.Subdivision.Code.v1,
+          ANZSIC.Group=ANZSIC.Group.v1,
+          ANZSIC.Group.Code=ANZSIC.Group.Code.v2,
+          State.Activity=State...Activity.,
+          Latitude=Facility.Latitude.Unq,
+          Longitude=Facility.Longitude.Unq,
+          Category=Category.v2,
+          Emission.Amount_tCO2e=Emission.Amount...tCO2.e.,
+          Electricity.Production.Usage=Electricity..Production..Usage,
+          Fuel.Quantity=Fuel.Quantity..unit.,
+          Activity.Energy.GJ=Activity..Energy..GJ.) %>%  #tidy up the variable names
+mutate(Fuel.Quantity = ifelse(is.na(Fuel.Quantity), 0 , Fuel.Quantity),
+       Activity.Energy.GJ= ifelse(is.na(Activity.Energy.GJ), 0 ,  Activity.Energy.GJ)) #revise to replace NA in Fuel.Quantity with 0
+
+nger.clean_summary_facility_test<-nger.clean_summary_facility_all_PBI %>% filter(Electricity.Production.Usage=="For use onsite")
+      
+  
+save(nger.clean_summary_facility_all_PBI,file="Z:/Scientific Assessment/GHG_Emissions/Data/NGER/nger.clean_IPCC_output.Rdata")
+```
+
+
